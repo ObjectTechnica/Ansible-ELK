@@ -1,0 +1,194 @@
+---
+# tasks for si-elk
+- name: si-elk - Flipping SElinux ( I know what your thinking )
+  selinux:
+    policy: targeted
+    state: permissive
+
+- name: si-elk - Flipping SElinux during runtime
+  command: /usr/sbin/setenforce 0
+
+- name: si-elk - Deploy hosts file template
+  template:
+    src: 'hosts.j2'
+    dest: '/etc/hosts'
+    owner: root
+    group: root
+    mode: 0644
+
+- name: si-elk - Setting hostname for runtime
+  hostname:
+    name: si-elk.localdomain
+
+- name: si-elk - Download jdk-8u141 from download.oracle.com
+  get_url:
+    url: http://download.oracle.com/otn-pub/java/jdk/8u141-b15/336fa29ff2bb4ef291e347e091f7f4a7/jdk-8u141-linux-x64.rpm
+    dest: /opt/jdk-8u141-linux-x64.rpm
+    mode: 0755
+    headers: "Cookie: gpw_e24=http%3A%2F%2Fwww.oracle.com%2F; oraclelicense=accept-securebackup-cookie"
+
+- name: si-elk - Install jdk-8u141 from local file
+  yum: name=/opt/jdk-8u141-linux-x64.rpm state=present
+
+- name: si-elk - Deploy elasticsearch-5.x repo file
+  copy:
+    src: elasticsearch.repo
+    dest: /etc/yum.repos.d/elasticsearch.repo
+    owner: root
+    group: root
+    mode: 0644
+
+- name: si-elk - Install ElasticSearch GPG keys
+  rpm_key: state=present key=https://packages.elastic.co/{{ item }}
+  with_items:
+    - GPG-KEY-elasticsearch
+
+- name: si-elk - Install elasticsearch
+  yum: name={{item}} state=present
+  with_items:
+      - epel-release
+      -  elasticsearch
+      - unzip
+
+- name: si-elk - Updating the port config in file
+  lineinfile:
+   destfile: /etc/elasticsearch/elasticsearch.yml
+   regexp: 'http.port:'
+   line: 'http.port: 9200'
+
+- name: si-elk - Updating the memory_lock config in file
+  lineinfile:
+   destfile: /etc/elasticsearch/elasticsearch.yml
+   regexp: 'bootstrap.memory_lock:'
+   line: 'bootstrap.memory_lock: true'
+
+- name: si-elk - Updating the network.host config in file
+  lineinfile:
+   destfile: /etc/elasticsearch/elasticsearch.yml
+   regexp: 'network.host:'
+   line: 'network.host: localhost'
+
+- name: si-elk - Updating the MAX_LOCKED_MEMORY config in file
+  lineinfile:
+   destfile: /etc/sysconfig/elasticsearch
+   regexp: 'MAX_LOCKED_MEMORY='
+   line: 'MAX_LOCKED_MEMORY=unlimited'
+
+- name: si-elk - Updating the LimitMEMLOCK config in file
+  lineinfile:
+   destfile: /usr/lib/systemd/system/elasticsearch.service
+   regexp: 'LimitMEMLOCK='
+   line: 'LimitMEMLOCK=infinity'
+
+- name: si-elk - Restart Elasticsearch, also issue daemon-reload to pick up config changes
+  systemd:
+    daemon_reload: yes
+    enabled: yes
+    state: restarted
+    name: elasticsearch
+
+- name: si-elk - Install kibana
+  yum: name={{item}} state=present
+  with_items:
+      -  kibana
+
+- name: si-elk - Updating the server.port config in file
+  lineinfile:
+   destfile: /etc/kibana/kibana.yml
+   regexp: 'server.port:'
+   line: 'server.port: 5601'
+
+- name: si-elk - Updating the server.host config in file
+  lineinfile:
+   destfile: /etc/kibana/kibana.yml
+   regexp: 'server.host:'
+   line: 'server.host: "localhost"'
+
+- name: si-elk - Updating the elasticsearch.url config in file
+  lineinfile:
+   destfile: /etc/kibana/kibana.yml
+   regexp: 'elasticsearch.url:'
+   line: 'elasticsearch.url: "http://localhost:9200"'
+
+- name: si-elk - Updating Kibana logging config to file instead of stdout
+  lineinfile:
+   destfile: /etc/kibana/kibana.yml
+   regexp: 'logging.dest:'
+   line: 'logging.dest: "/var/log/kibana.log"'
+
+- name: si-elk - Restart Kibana, also issue daemon-reload to pick up config changes
+  systemd:
+    daemon_reload: yes
+    enabled: yes
+    state: restarted
+    name: kibana
+
+- name: si-elk - Install NGINX
+  yum: name={{item}} state=present
+  with_items:
+      - nginx
+
+- name: si-elk - Deploy NGINX default config file
+  copy:
+    src: nginx.conf
+    dest: /etc/nginx/nginx.conf
+    owner: root
+    group: root
+    mode: 0644
+
+- name: si-elk - Deploy htaccess file for basic auth (left inactive for future use )
+  copy:
+    src: htaccess
+    dest: /etc/nginx/.htpasswd.users
+    owner: root
+    group: root
+    mode: 0644
+
+- name: si-elk - Restart NGINX, also issue daemon-reload to pick up config changes
+  systemd:
+    daemon_reload: yes
+    enabled: yes
+    state: restarted
+    name: nginx
+
+- name: si-elk - Install logstash
+  yum: name={{item}} state=present
+  with_items:
+      - logstash
+
+- name: si-elk - Updating the openssl.cnf config file
+  lineinfile:
+   destfile: /etc/pki/tls/openssl.cnf
+   regexp: 'Extensions for a typical CA'
+   line: 'subjectAltName = IP: "{{ ansible_default_ipv4.address }}"'
+
+- name: si-elk - Setting up SSL Key and Cert 1 of 2
+  command: /bin/openssl req -x509 -days 3650 -batch -nodes -newkey rsa:4096 -keyout /etc/pki/tls/logstash-forwarder.key -out /etc/pki/tls/logstash-forwarder.crt -subj /CN=si-elk.localdomain
+
+- name: si-elk - Setting up SSL Key and Cert 2 of 2
+  command: /bin/openssl req -x509 -days 3650 -batch -nodes -newkey rsa:4096 -keyout /etc/pki/tls/logstash-forwarder.key -out /etc/pki/tls/logstash-forwarder.crt
+
+- name: si-elk - Deploy logstash.conf config file
+  copy:
+    src: logstash.conf
+    dest: /etc/logstash/conf.d/logstash.conf
+    owner: root
+    group: root
+    mode: 0644
+
+- name: si-elk - Unzipping dashboards for kibana
+  unarchive:
+    src: beats-dashboards-1.1.0.zip
+    dest: /opt
+    owner: root
+    group: root
+    mode: 0755
+- name: si-elk - Loading filebeat beats-dashboards
+  command: chdir=/opt/beats-dashboards-1.1.0 ./load.sh
+
+- name: si-elk - Restart logstash, also issue daemon-reload to pick up config changes
+  systemd:
+    daemon_reload: yes
+    enabled: yes
+    state: restarted
+    name: logstash

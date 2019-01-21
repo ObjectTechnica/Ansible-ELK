@@ -1,0 +1,4 @@
+---
+# vars file for elk-es
+fully_qualified: elk-es.localdomain
+short_name: elk-es

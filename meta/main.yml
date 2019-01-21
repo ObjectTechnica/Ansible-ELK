@@ -1,0 +1,18 @@
+---
+galaxy_info:
+  author: Adam A. Valenzuela
+  description: Single Instance Elk Stack
+  company: Object-Technica.io
+  license: MIT
+  min_ansible_version: 2.3
+  platforms:
+  - name: EL
+    versions:
+    - 7
+  galaxy_tags:
+  - elasticsearch
+  - kibana
+  - logstash
+  - elk
+  - NGINX
+dependencies: []
