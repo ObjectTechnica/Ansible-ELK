@@ -1,0 +1,3 @@
+---
+# defaults file for si-elk
+elk_address: "{{ ansible_default_ipv4.address }}"

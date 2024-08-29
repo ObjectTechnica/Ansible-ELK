@@ -1,0 +1,2 @@
+Dont Forget to run this for BasicAuth
+htpasswd -c /etc/nginx/.htpasswd.users admin
